@@ -1,5 +1,5 @@
 {
-  "name": "piverse",
+  "name": "@vs4vijay/piverse",
   "version": "0.1.0",
   "description": "A multi-extension ecosystem for the Pi coding agent",
   "keywords": ["pi-package"],
