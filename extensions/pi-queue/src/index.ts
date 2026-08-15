@@ -1,52 +1,140 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   let queue: string[] = [];
+  let paused = false;
+  let lastTurnHadError = false;
+  let drainTotal = 0;
 
-  pi.registerCommand("queue", {
-    description: "Queue a message to send after the current turn settles. No args = show queue.",
-    handler: async (args, ctx) => {
-      if (!args.trim()) {
-        if (queue.length === 0) {
-          ctx.ui.notify("Queue is empty. /queue <message> to add.", "info");
-        } else {
-          const display = queue.map((m, i) => `${i + 1}. ${m}`).join("\n");
-          ctx.ui.notify(`Queued (${queue.length}):\n${display}`, "info");
-        }
-        return;
+  // Register command under both /queue-* and /q-* names
+  function cmd(name: string, description: string, handler: (args: string, ctx: any) => Promise<void>) {
+    const opts = { description, handler };
+    pi.registerCommand(`queue${name}`, opts);
+    pi.registerCommand(`q${name}`, opts);
+  }
+
+  cmd("", "Queue a message to send after the current turn settles. No args = show queue.", async (args, ctx) => {
+    if (!args.trim()) {
+      if (queue.length === 0) {
+        ctx.ui.notify("Queue is empty. /queue <message> to add.", "info");
+      } else {
+        const label = paused ? `Queued (${queue.length}, PAUSED)` : `Queued (${queue.length})`;
+        const display = queue.map((m, i) => `${i + 1}. ${m}`).join("\n");
+        ctx.ui.notify(`${label}:\n${display}`, "info");
       }
-      queue.push(args.trim());
-      ctx.ui.notify(`Queued #${queue.length}: "${args.trim()}"`, "info");
-    },
+      return;
+    }
+    queue.push(args.trim());
+    ctx.ui.notify(`Queued #${queue.length}: "${args.trim()}"`, "info");
   });
 
-  pi.registerCommand("queue-clear", {
-    description: "Clear all queued messages",
-    handler: async (_args, ctx) => {
-      const count = queue.length;
-      queue = [];
-      ctx.ui.notify(count ? `Cleared ${count} queued message(s)` : "Queue already empty", "info");
-    },
+  cmd("-clear", "Clear all queued messages", async (_args, ctx) => {
+    const count = queue.length;
+    queue = [];
+    ctx.ui.notify(count ? `Cleared ${count} queued message(s)` : "Queue already empty", "info");
   });
 
-  pi.on("agent_settled", async () => {
-    if (queue.length === 0) return;
+  cmd("-pause", "Pause queue auto-firing", async (_args, ctx) => {
+    paused = true;
+    ctx.ui.notify("Queue paused.", "info");
+  });
+
+  cmd("-resume", "Resume queue auto-firing", async (_args, ctx) => {
+    paused = false;
+    if (queue.length > 0) {
+      ctx.ui.notify(`Queue resumed. Firing next (${queue.length} remaining).`, "info");
+      const next = queue.shift()!;
+      const opts = next.startsWith("/") ? { expandPromptTemplates: true } : {};
+      pi.sendUserMessage(next, opts);
+    } else {
+      ctx.ui.notify("Queue resumed (empty).", "info");
+    }
+  });
+
+  cmd("-rm", "Remove a queued item by index (1-based)", async (args, ctx) => {
+    const idx = parseInt(args.trim(), 10);
+    if (isNaN(idx) || idx < 1 || idx > queue.length) {
+      ctx.ui.notify(`Invalid index. Use 1-${queue.length}.`, "warning");
+      return;
+    }
+    const [removed] = queue.splice(idx - 1, 1);
+    ctx.ui.notify(`Removed #${idx}: "${removed}" (${queue.length} remaining)`, "info");
+  });
+
+  cmd("-next", "Insert a message at the front of the queue (fires next)", async (args, ctx) => {
+    const msg = args.trim();
+    if (!msg) {
+      ctx.ui.notify("Usage: /queue-next <message>", "warning");
+      return;
+    }
+    queue.unshift(msg);
+    ctx.ui.notify(`Inserted at #1: "${msg}" (${queue.length} total)`, "info");
+  });
+
+  cmd("-file", "Queue messages from a file (one per line, # comments skipped)", async (args, ctx) => {
+    const filePath = args.trim();
+    if (!filePath) {
+      ctx.ui.notify("Usage: /queue-file <path>", "warning");
+      return;
+    }
+    const resolved = resolve(process.cwd(), filePath);
+    let content: string;
+    try {
+      content = readFileSync(resolved, "utf-8");
+    } catch {
+      ctx.ui.notify(`Cannot read file: ${resolved}`, "error");
+      return;
+    }
+    const lines = content.split("\n").filter((l) => l.trim() && !l.trim().startsWith("#"));
+    for (const line of lines) queue.push(line.trim());
+    ctx.ui.notify(`Queued ${lines.length} item(s) from ${filePath}`, "info");
+  });
+
+  pi.on("tool_result", async (event) => {
+    if (event.isError) lastTurnHadError = true;
+  });
+
+  pi.on("agent_settled", async (_event, ctx) => {
+    if (queue.length === 0) {
+      drainTotal = 0;
+      return;
+    }
+    if (lastTurnHadError) {
+      paused = true;
+      lastTurnHadError = false;
+      ctx.ui.notify("Queue paused — previous turn had errors. /queue-resume to continue.", "warning");
+      return;
+    }
+    if (paused) return;
+
+    // Track progress
+    if (drainTotal === 0) drainTotal = queue.length;
+    const current = drainTotal - queue.length + 1;
+    ctx.ui.notify(`Queue: running ${current}/${drainTotal}`, "info");
+
+    lastTurnHadError = false;
     const next = queue.shift()!;
-    pi.sendUserMessage(next);
+    const opts = next.startsWith("/") ? { expandPromptTemplates: true } : {};
+    pi.sendUserMessage(next, opts);
   });
 
   pi.on("session_start", async (_event, ctx) => {
     queue = [];
+    paused = false;
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type === "custom" && entry.customType === "piverse-queue-state") {
-        queue = (entry.data as { queue: string[] }).queue ?? [];
+        const data = entry.data as { queue: string[]; paused?: boolean };
+        queue = data.queue ?? [];
+        paused = data.paused ?? false;
       }
     }
   });
 
   pi.on("session_shutdown", async () => {
-    if (queue.length > 0) {
-      pi.appendEntry("piverse-queue-state", { queue });
+    if (queue.length > 0 || paused) {
+      pi.appendEntry("piverse-queue-state", { queue, paused });
     }
   });
 }
