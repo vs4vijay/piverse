@@ -2,19 +2,19 @@
   "name": "piverse",
   "version": "0.1.0",
   "description": "A multi-extension ecosystem for the Pi coding agent",
-  "private": true,
+  "keywords": ["pi-package"],
   "type": "module",
-  "workspaces": [
-    "extensions/*"
-  ],
+  "pi": {
+    "extensions": ["./extensions/pi-queue/src/index.ts"]
+  },
   "scripts": {
-    "dev": "tsc --watch --noEmit",
-    "typecheck": "tsc --noEmit",
-    "link:all": "for dir in extensions/*/; do (cd \"$dir\" && npm link); done"
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*",
     "typescript": "^5.0.0"
   }
 }
