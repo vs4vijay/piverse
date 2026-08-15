@@ -1,0 +1,15 @@
+{
+  "name": "@piverse/queue",
+  "version": "0.1.0",
+  "description": "Queue messages to run after the current Pi session turn settles",
+  "type": "module",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
