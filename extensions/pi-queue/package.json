@@ -1,6 +1,6 @@
 {
   "name": "@vs4vijay/pi-queue",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Queue messages to run after the current Pi session turn settles",
   "type": "module",
   "keywords": ["pi-package"],

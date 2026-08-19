@@ -16,41 +16,82 @@ Add `@vs4vijay/piverse` to your pi config, or reference the extension path direc
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/queue <message>` | Add a message to the queue |
-| `/queue` | Show pending messages with index numbers |
-| `/queue-clear` | Clear all queued messages |
+All commands are available as both `/queue-*` and `/q-*`.
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `/queue <message>` | `/q <message>` | Add a message to the queue |
+| `/queue` | `/q` | Show pending messages with index numbers |
+| `/queue-clear` | `/q-clear` | Clear all queued messages |
+| `/queue-pause` | `/q-pause` | Pause auto-firing (queue stays intact) |
+| `/queue-resume` | `/q-resume` | Resume auto-firing and fire next immediately |
+| `/queue-rm <index>` | `/q-rm <index>` | Remove item at position (1-based) |
+| `/queue-next <msg>` | `/q-next <msg>` | Insert message at front (fires next) |
+| `/queue-file <path>` | `/q-file <path>` | Queue lines from a file (skips `#` comments) |
 
 ## How It Works
 
-1. You `/queue` one or more messages while the agent is working (or idle).
-2. The extension listens for the `agent_settled` event — fired when the agent fully settles (no retries, no follow-ups).
+1. You `/q` one or more messages while the agent is working (or idle).
+2. The extension listens for the `agent_settled` event — fired when the agent fully settles.
 3. On settle, the next queued message fires as a new user message via `pi.sendUserMessage()`.
 4. Messages execute one at a time, in FIFO order.
-5. Queue state persists across `/reload` and session restarts via `session_shutdown`/`session_start` hooks.
+5. Slash commands (messages starting with `/`) are dispatched through the command system automatically.
+
+## Features
+
+### Stop on Error
+
+If a tool error occurs during a turn, the queue auto-pauses and notifies you. Use `/q-resume` to continue, or `/q-rm` to skip the problematic next item.
+
+### Progress
+
+During a drain sequence, you'll see: `Queue: running 2/5` — showing which item is firing out of the total batch.
+
+### Queue from File
+
+Load a batch of messages from a file:
+
+```
+# tasks.txt
+add error handling to the auth module
+write tests for it
+# this line is skipped
+update the README
+```
+
+```
+/q-file tasks.txt
+→ Queued 3 item(s) from tasks.txt
+```
 
 ## Persistence
 
-On `session_shutdown`, any remaining queue is saved as a custom session entry (`piverse-queue-state`). On `session_start`, the extension restores the queue from that entry. This means you can restart your session without losing queued work.
+Queue state and pause flag persist across `/reload` and session restarts via `session_shutdown`/`session_start` hooks.
 
 ## Example
 
 ```
-> /queue add error handling to the auth module
+> /q add error handling to the auth module
 Queued #1: "add error handling to the auth module"
 
-> /queue write tests for it
+> /q write tests for it
 Queued #2: "write tests for it"
 
-> /queue
+> /q
 Queued (2):
 1. add error handling to the auth module
 2. write tests for it
+
+> /q-next fix the lint errors first
+Inserted at #1: "fix the lint errors first" (3 total)
+
+> /q-pause
+Queue paused.
+
+> /q-rm 3
+Removed #3: "write tests for it" (2 remaining)
+
+> /q-resume
+Queue resumed. Firing next (2 remaining).
+→ Queue: running 1/2
 ```
-
-After the current turn finishes → "add error handling to the auth module" sends automatically → once that settles → "write tests for it" sends.
-
-## Roadmap
-
-See [plan.md](./plan.md) for planned features: pause/resume, stop-on-error, reorder, batch input, progress tracking, and more.
