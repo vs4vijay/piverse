@@ -1,0 +1,31 @@
+{
+  "name": "@vs4vijay/pi-extension-template",
+  "version": "0.1.0",
+  "description": "Onboarding skill and scaffold for creating new Pi extensions following piverse conventions",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vs4vijay/piverse.git"
+  },
+  "author": "vs4vijay",
+  "homepage": "https://github.com/vs4vijay/piverse",
+  "bugs": {
+    "url": "https://github.com/vs4vijay/piverse/issues"
+  },
+  "pi": {
+    "skills": ["./skills"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
