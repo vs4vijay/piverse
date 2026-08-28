@@ -31,11 +31,51 @@ All commands are available as both `/queue-*` and `/q-*`.
 
 ## How It Works
 
+Queued messages are intentionally delivered **after** the current turn settles. The extension listens for the `agent_settled` event and only then fires the next message as a new user message — so follow-ups you queue mid-run never interrupt the turn in progress. They execute cleanly afterwards, one at a time.
+
 1. You `/q` one or more messages while the agent is working (or idle).
 2. The extension listens for the `agent_settled` event — fired when the agent fully settles.
 3. On settle, the next queued message fires as a new user message via `pi.sendUserMessage()`.
 4. Messages execute one at a time, in FIFO order.
 5. Slash commands (messages starting with `/`) are dispatched through the command system automatically.
+
+## Example usage
+
+Queue follow-ups while the agent is working:
+
+```
+> /queue refactor the auth module next
+Queued #1: "refactor the auth module next"
+
+> /queue run the test suite
+Queued #2: "run the test suite"
+
+> /queue
+Queued (2):
+1. refactor the auth module next
+2. run the test suite
+```
+
+Once the current turn settles, the queued messages fire one at a time as new user messages:
+
+```
+→ Queue: running 1/2   # "refactor the auth module next" is sent
+→ Queue: running 2/2   # "run the test suite" is sent
+```
+
+Changed your mind? Clear the queue instead:
+
+```
+> /queue-clear
+Cleared 2 queued message(s)
+```
+
+With nothing queued:
+
+```
+> /queue
+Queue is empty. /queue <message> to add.
+```
 
 ## Features
 
