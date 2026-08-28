@@ -5,6 +5,16 @@
   "keywords": [
     "pi-package"
   ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vs4vijay/piverse.git"
+  },
+  "author": "vs4vijay",
+  "homepage": "https://github.com/vs4vijay/piverse",
+  "bugs": {
+    "url": "https://github.com/vs4vijay/piverse/issues"
+  },
   "type": "module",
   "pi": {
     "extensions": [

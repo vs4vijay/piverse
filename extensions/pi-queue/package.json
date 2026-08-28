@@ -4,6 +4,16 @@
   "description": "Queue messages to run after the current Pi session turn settles",
   "type": "module",
   "keywords": ["pi-package"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vs4vijay/piverse.git"
+  },
+  "author": "vs4vijay",
+  "homepage": "https://github.com/vs4vijay/piverse",
+  "bugs": {
+    "url": "https://github.com/vs4vijay/piverse/issues"
+  },
   "pi": {
     "extensions": ["./src/index.ts"]
   },
