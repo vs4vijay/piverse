@@ -8,7 +8,6 @@ A multi-extension ecosystem for the [Pi coding agent](https://pi.dev).
 |-----------|---------|-------------|
 | [pi-queue](./extensions/pi-queue) | `/queue` | Queue messages to run after the current agent turn settles |
 | [pi-notes](./extensions/pi-notes) | `/notes` | Project-level notes with TUI, tags, search, and pinning |
-| [pi-extension-template](./extensions/pi-extension-template) | — | Onboarding skill for scaffolding new extensions |
 
 ## Install
 
@@ -85,7 +84,6 @@ piverse/
 ├── extensions/
 │   ├── pi-queue/          # /queue - message queueing
 │   ├── pi-notes/          # /notes - project notes
-│   ├── pi-extension-template/  # onboarding skill for new extensions
 │   └── ...                # more extensions coming
 ├── package.json           # workspace root
 ├── tsconfig.json          # shared type checking
