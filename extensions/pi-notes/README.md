@@ -29,12 +29,15 @@ Or add to your Pi config:
 | `/notes <title>` | Quick-add note with title (opens editor for content) |
 | `/notes list` | List all notes in CLI |
 | `/notes show <id>` | Show full note content |
+| `/notes edit <id>` | Edit a note's title/content via external editor |
 | `/notes rm <id>` | Delete note (with confirmation) |
 | `/notes search <query>` | Search notes by title/content |
 | `/notes tag <id> <tag>` | Add tag to note |
 | `/notes untag <id> <tag>` | Remove tag from note |
 | `/notes pin <id>` | Pin note to top of list |
 | `/notes unpin <id>` | Unpin note |
+| `/notes export [path]` | Export all notes to a JSON file (default: `./notes.json`) |
+| `/notes import <path>` | Import and merge notes from a JSON file |
 
 ## TUI Interface
 
@@ -44,7 +47,7 @@ Or add to your Pi config:
 
 Opens full-screen TUI with:
 
-- **Left pane**: Note list (title + preview, fuzzy filter on type)
+- **Left pane**: Note list (title + preview, live filter as you type)
 - **Right pane**: Markdown preview of selected note
 - **Keys**:
   - `↑/↓` / `j/k` — navigate
@@ -53,7 +56,7 @@ Opens full-screen TUI with:
   - `e` — edit selected
   - `d` — delete selected (with confirmation)
   - `p` — toggle pin
-  - `/` — clear search
+  - `/` — start filtering: type to filter the list live, `Esc`/`Enter` to finish
   - `q` / `Esc` — quit (or back from view/edit)
 
 ### View Mode
@@ -123,10 +126,27 @@ Pinned "API contract"
 > /notes unpin a1b2c3
 Unpinned "API contract"
 
+> /notes edit a1b2c3
+# Opens external editors prefilled with the note's current title and content
+Updated note: API contract
+
+> /notes export
+Exported 3 notes to /path/to/project/notes.json
+
+> /notes export backup.json
+Exported 3 notes to /path/to/project/backup.json
+
+> /notes import backup.json
+Imported 2 note(s) from /path/to/project/backup.json (1 already present, skipped)
+
 > /notes rm a1b2c3
 # Confirmation dialog... "Deleted note: API contract"
 ```
 
+### Export/Import format
+
+`/notes export` writes the same JSON shape used for persistence. `/notes import` reads a file shaped like `{ "notes": [...], "version": 1 }` and **merges** it into the store: notes whose `id` already exists locally are skipped (existing notes win), new ids are appended.
+
 ## Roadmap
 
-See [plan.md](./plan.md) for planned features: search, tags, pinning, linking, templates, export/import.
+See [plan.md](./plan.md) for planned features: linking, templates, and other ideas.

@@ -4,6 +4,8 @@
 
 Project-level note-taking extension for Pi coding agent. Persists notes as JSON in `.pi/notes/notes.json`. Primary interface is a TUI opened via `/notes`, with CLI fallbacks for common operations.
 
+**Implemented:** MVP (store, core commands, TUI), CLI + TUI search, tags, pinning, external-editor title/content editing (`edit`), and JSON export/import. Stores are cached per-project so multi-project sessions don't collide.
+
 ---
 
 ## Planned Features
@@ -50,7 +52,7 @@ Project-level note-taking extension for Pi coding agent. Persists notes as JSON 
 
 #### 2.1 Search & Filter
 - `/notes search <query>` — CLI: filter notes by title/content match
-- TUI: live fuzzy filter as you type (reuse SelectList filter)
+- TUI: live filter as you type (`/` to start, type to filter, `Esc`/`Enter` to finish)
 - Show match count in header
 
 #### 2.2 Tags (Frontmatter Extension)
@@ -79,10 +81,21 @@ Project-level note-taking extension for Pi coding agent. Persists notes as JSON 
 - Built-in templates: `decision`, `meeting`, `todo`, `snippet`
 - Templates stored in `.pi/notes/templates/*.md`
 
-#### 3.3 Export/Import
-- `/notes export <path>` — export all notes as markdown files
-- `/notes import <path>` — import from markdown directory
-- Useful for migration/backup
+---
+
+### Completed
+
+#### Export/Import (CLI)
+- `/notes export [path]` — export all notes as JSON (default `./notes.json` in cwd)
+- `/notes import <path>` — import and merge from JSON; incoming notes whose `id` already exists are skipped (existing notes win)
+- Reuses the atomic (temp + rename) write; validates the imported file shape
+
+#### Title/Content Editing (CLI)
+- `/notes edit <id>` — edit a note's title/content via external editor, prefilled with current values
+
+#### Per-Project Store Caching
+- `getNoteStore` caches one `NoteStore` per `cwd` (was a single global instance), so notes for different projects in one session don't collide
+- `getNoteStore()` (no arg) defaults to `process.cwd()`
 
 ---
 

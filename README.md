@@ -40,15 +40,18 @@ Project-level notes persisted in `.pi/notes/notes.json` (committed to git, team-
 /notes "API contract"   # Quick-add a note with that title (opens editor for content)
 /notes list             # List all notes in the CLI
 /notes show <id>        # Show a note's full content
+/notes edit <id>        # Edit a note's title/content via external editor
 /notes search <query>   # Search notes by title/content
 /notes tag <id> <tag>   # Add a tag to a note
 /notes pin <id>         # Pin a note to the top of the list
 /notes rm <id>          # Delete a note (with confirmation)
+/notes export [path]    # Export all notes to a JSON file
+/notes import <path>    # Import and merge notes from a JSON file
 ```
 
 - Persists as JSON, auto-saves on every mutation
 - Loads on `session_start`, flushes on `session_shutdown`
-- TUI keys: `↑/↓` or `j/k` to navigate, `Enter` to view, `n` new, `e` edit, `d` delete, `p` pin, `q`/`Esc` to quit
+- TUI keys: `↑/↓` or `j/k` to navigate, `Enter` to view, `n` new, `e` edit, `d` delete, `p` pin, `/` to filter by typing, `q`/`Esc` to quit
 
 ## Development
 

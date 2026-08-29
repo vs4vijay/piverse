@@ -7,6 +7,7 @@ import { getNoteStore, resetNoteStore } from "./store.js";
 import type { Note } from "./types.js";
 import { parseNotesCommand, type ParsedCommand } from "./types.js";
 import { createNotesTUI } from "./tui.js";
+import { isAbsolute, join } from "path";
 
 let tuiHandle: (() => void) | null = null;
 
@@ -45,6 +46,9 @@ export default async function (pi: ExtensionAPI) {
         case "rm":
           await handleRemove(parsed.args, store, ctx);
           return;
+        case "edit":
+          await handleEdit(parsed.args, store, ctx);
+          return;
         case "search":
           await handleSearch(parsed.args, notes, ctx);
           return;
@@ -59,6 +63,12 @@ export default async function (pi: ExtensionAPI) {
           return;
         case "unpin":
           await handleUnpin(parsed.args, store, ctx);
+          return;
+        case "export":
+          await handleExport(parsed.args, store, ctx);
+          return;
+        case "import":
+          await handleImport(parsed.args, store, ctx);
           return;
         default:
           // Quick-add or open TUI
@@ -135,6 +145,37 @@ async function handleRemove(args: string[], store: ReturnType<typeof getNoteStor
       ctx.ui.notify("Delete failed", "error");
     }
   }
+}
+
+async function handleEdit(args: string[], store: ReturnType<typeof getNoteStore>, ctx: ExtensionCommandContext): Promise<void> {
+  if (args.length === 0) {
+    ctx.ui.notify("Usage: /notes edit <id>", "error");
+    return;
+  }
+
+  const id = args[0];
+  const notes = await store.getAll();
+  const note = notes.find((n) => n.id === id || n.id.startsWith(id));
+
+  if (!note) {
+    ctx.ui.notify(`Note not found: ${id}`, "error");
+    return;
+  }
+
+  const title = await ctx.ui.editor(`Edit: ${note.title}`, note.title);
+  if (title === undefined) {
+    ctx.ui.notify("Cancelled", "info");
+    return;
+  }
+
+  const content = await ctx.ui.editor(`Content for: ${title}`, note.content);
+  if (content === undefined) {
+    ctx.ui.notify("Cancelled", "info");
+    return;
+  }
+
+  await store.update(note.id, { title, content });
+  ctx.ui.notify(`Updated note: ${title}`, "info");
 }
 
 async function handleSearch(args: string[], notes: Note[], ctx: ExtensionCommandContext): Promise<void> {
@@ -252,62 +293,72 @@ async function handleQuickAdd(title: string, store: ReturnType<typeof getNoteSto
   ctx.ui.notify(`Created note: ${note.title}`, "info");
 }
 
+async function handleExport(args: string[], store: ReturnType<typeof getNoteStore>, ctx: ExtensionCommandContext): Promise<void> {
+  const filePath = resolvePath(ctx.cwd, args[0] ?? "notes.json");
+  const count = await store.exportTo(filePath);
+  ctx.ui.notify(`Exported ${count} notes to ${filePath}`, "info");
+}
+
+async function handleImport(args: string[], store: ReturnType<typeof getNoteStore>, ctx: ExtensionCommandContext): Promise<void> {
+  if (args.length === 0) {
+    ctx.ui.notify("Usage: /notes import <path>", "error");
+    return;
+  }
+
+  const filePath = resolvePath(ctx.cwd, args[0]);
+  try {
+    const { imported, skipped } = await store.importFrom(filePath);
+    const skippedText = skipped > 0 ? ` (${skipped} already present, skipped)` : "";
+    ctx.ui.notify(`Imported ${imported} note(s) from ${filePath}${skippedText}`, "info");
+  } catch (err) {
+    ctx.ui.notify(`Import failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+  }
+}
+
+function resolvePath(cwd: string, p: string): string {
+  return isAbsolute(p) ? p : join(cwd, p);
+}
+
 async function openTUI(ctx: ExtensionCommandContext, initialNotes: Note[]): Promise<void> {
-  // Create TUI component
+  const store = getNoteStore(ctx.cwd);
+
   const component = createNotesTUI(
     initialNotes,
-    ctx.ui.theme as any, // TUI type
     ctx.ui.theme,
     () => {
       // onClose
       tuiHandle?.();
       tuiHandle = null;
     },
-    async (note: Note) => {
-      // onSave - handled internally by TUI
+    async (note?: Note): Promise<Note[] | undefined> => {
+      // External editor: create or edit a note
+      if (note) {
+        const title = await ctx.ui.editor(`Edit: ${note.title}`, note.title);
+        if (title === undefined) return undefined;
+        const content = await ctx.ui.editor(`Content for: ${title}`, note.content);
+        if (content === undefined) return undefined;
+        await store.update(note.id, { title, content });
+      } else {
+        const title = await ctx.ui.editor("New Note", "");
+        if (title === undefined) return undefined;
+        const content = await ctx.ui.editor(`Content for: ${title}`, "");
+        if (content === undefined) return undefined;
+        await store.create(title, content);
+      }
+      return store.getAll();
     },
-    async (id: string) => {
-      // onDelete - handled internally by TUI
+    async (id: string): Promise<Note[]> => {
+      await store.delete(id);
+      return store.getAll();
+    },
+    async (note: Note): Promise<Note[]> => {
+      await store.update(note.id, { pinned: !note.pinned });
+      return store.getAll();
     }
   );
 
-  // Inject editor callback into TUI for external editor support
-  const tuiRef = (ctx.ui as any).tui; // Access underlying TUI instance
-  if (tuiRef) {
-    (tuiRef as any)._piEditorCallback = async (editingNote?: Note) => {
-      const title = await ctx.ui.editor(
-        editingNote ? `Edit: ${editingNote.title}` : "New Note",
-        editingNote?.title || ""
-      );
-
-      if (title === undefined) return; // Cancelled
-
-      const content = await ctx.ui.editor(
-        `Content for: ${title}`,
-        editingNote?.content || ""
-      );
-
-      if (content === undefined) return; // Cancelled
-
-      // Find the TUI component and call onEditorResult
-      // This is a bit hacky - better approach would be to pass callbacks
-      const store = getNoteStore(ctx.cwd);
-      if (editingNote) {
-        await store.update(editingNote.id, { title, content });
-      } else {
-        await store.create(title, content);
-      }
-
-      // Refresh TUI notes
-      const notes = await store.getAll();
-      // Need to trigger TUI refresh - for now just close and reopen
-      tuiHandle?.();
-      await openTUI(ctx, notes);
-    };
-  }
-
   // Show custom overlay
-  const result = await ctx.ui.custom(
+  await ctx.ui.custom(
     (tui, theme, keybindings, done) => {
       // The component is already a Focusable Component
       tuiHandle = () => done(undefined);

@@ -3,17 +3,16 @@
  */
 
 import { VStack, HStack, Box, Text, ScrollView, Markdown, SelectList, type SelectItem, type SelectListTheme, type MarkdownTheme } from "@earendil-works/pi-tui";
-import type { Component, Focusable, TUI } from "@earendil-works/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
 import { Theme } from "@earendil-works/pi-coding-agent";
 import type { Note } from "./types.js";
-import { getNoteStore } from "./store.js";
 
 interface ListItem {
   note: Note;
   display: string;
 }
 
-type ViewMode = "list" | "view" | "editor" | "confirm";
+type ViewMode = "list" | "view" | "editor" | "confirm" | "search";
 
 export class NotesTUI extends VStack implements Focusable {
   private mode: ViewMode = "list";
@@ -24,13 +23,14 @@ export class NotesTUI extends VStack implements Focusable {
   private previewMarkdown: Markdown;
   private statusText: Text;
   private headerText: Text;
+  private theme: Theme;
   private onClose: () => void;
-  private onSave: (note: Note) => void;
-  private onDelete: (id: string) => void;
+  private onExternalEdit: (note?: Note) => Promise<Note[] | undefined>;
+  private onDelete: (id: string) => Promise<Note[]>;
+  private onTogglePin: (note: Note) => Promise<Note[]>;
   private editingNote: Note | null = null;
   private confirmAction: "delete" | "cancel" | null = null;
   private confirmNoteId: string | null = null;
-  private tuiRef: TUI | null = null;
   private listBox: Box;
   private previewBox: Box;
   private headerBox: Box;
@@ -38,18 +38,19 @@ export class NotesTUI extends VStack implements Focusable {
 
   constructor(
     initialNotes: Note[],
-    tui: TUI,
     theme: Theme,
     onClose: () => void,
-    onSave: (note: Note) => void,
-    onDelete: (id: string) => void
+    onExternalEdit: (note?: Note) => Promise<Note[] | undefined>,
+    onDelete: (id: string) => Promise<Note[]>,
+    onTogglePin: (note: Note) => Promise<Note[]>
   ) {
     super([], { gap: 0 });
-    this.tuiRef = tui;
+    this.theme = theme;
     this.notes = initialNotes;
     this.onClose = onClose;
-    this.onSave = onSave;
+    this.onExternalEdit = onExternalEdit;
     this.onDelete = onDelete;
+    this.onTogglePin = onTogglePin;
     this.filteredNotes = this.buildListItems(this.notes);
 
     // Header
@@ -68,7 +69,7 @@ export class NotesTUI extends VStack implements Focusable {
       label: item.display,
     }));
 
-    this.listSelect = new SelectList(selectItems, 20, this.getSelectTheme(theme));
+    this.listSelect = new SelectList(selectItems, 20, this.getSelectTheme());
 
     // Preview markdown
     this.previewMarkdown = new Markdown("", 0, 0, this.getMarkdownTheme(theme));
@@ -93,7 +94,7 @@ export class NotesTUI extends VStack implements Focusable {
     this.updatePreview();
   }
 
-  private getSelectTheme(theme: Theme): SelectListTheme {
+  private getSelectTheme(): SelectListTheme {
     return {
       selectedPrefix: (text) => `\x1b[7m ${text} \x1b[0m`,
       selectedText: (text) => `\x1b[7m${text}\x1b[0m`,
@@ -173,7 +174,7 @@ export class NotesTUI extends VStack implements Focusable {
       label: item.display,
     }));
     // Replace SelectList - need to recreate the list
-    this.listSelect = new SelectList(selectItems, 20, this.getSelectTheme((this as any).theme));
+    this.listSelect = new SelectList(selectItems, 20, this.getSelectTheme());
     // Update list box child
     this.listBox.clear();
     this.listBox.addChild(new ScrollView(this.listSelect, { scrollbar: "auto" }));
@@ -203,6 +204,11 @@ export class NotesTUI extends VStack implements Focusable {
   }
 
   handleInput(keyData: string): void {
+    if (this.mode === "search") {
+      this.handleSearchInput(keyData);
+      return;
+    }
+
     // Global keys
     if (keyData === "q" || keyData === "Escape") {
       if (this.mode === "list") {
@@ -286,14 +292,33 @@ export class NotesTUI extends VStack implements Focusable {
   private handleConfirmInput(key: string): void {
     if (key === "y" || key === "Y") {
       if (this.confirmAction === "delete" && this.confirmNoteId) {
-        this.onDelete(this.confirmNoteId);
-        this.notes = this.notes.filter((n) => n.id !== this.confirmNoteId);
-        this.refreshList();
+        const id = this.confirmNoteId;
+        this.onDelete(id).then((notes) => {
+          this.notes = notes;
+          this.refreshList();
+        });
       }
       this.exitConfirmMode();
     } else if (key === "n" || key === "N" || key === "Escape") {
       this.exitConfirmMode();
     }
+  }
+
+  private handleSearchInput(key: string): void {
+    if (key === "Escape" || key === "Enter") {
+      this.endSearch();
+      return;
+    }
+    if (key === "Backspace" || key === "backspace") {
+      this.searchQuery = this.searchQuery.slice(0, -1);
+    } else if (!isPrintableSearchChar(key)) {
+      return;
+    } else {
+      this.searchQuery += key;
+    }
+    this.updateSearchHeader();
+    this.statusText.setText(this.buildStatusText());
+    this.refreshList();
   }
 
   private enterViewMode(): void {
@@ -317,6 +342,22 @@ export class NotesTUI extends VStack implements Focusable {
     this.confirmNoteId = null;
     this.headerText.setText("Pi Notes  [n] new  [/] search  [q] quit");
     this.statusText.setText(this.buildStatusText());
+  }
+
+  private startSearch(): void {
+    this.mode = "search";
+    this.updateSearchHeader();
+    this.statusText.setText(this.buildStatusText());
+  }
+
+  private endSearch(): void {
+    this.mode = "list";
+    this.headerText.setText("Pi Notes  [n] new  [/] search  [q] quit");
+    this.statusText.setText(this.buildStatusText());
+  }
+
+  private updateSearchHeader(): void {
+    this.headerText.setText(`Pi Notes — Search: ${this.searchQuery || ""}  [Esc] done`);
   }
 
   private openEditor(note?: Note): void {
@@ -348,57 +389,38 @@ export class NotesTUI extends VStack implements Focusable {
   private togglePin(): void {
     const note = this.getSelectedNote();
     if (note) {
-      getNoteStore().update(note.id, { pinned: !note.pinned }).then(() => {
-        this.refreshNotes();
+      this.onTogglePin(note).then((notes) => {
+        this.notes = notes;
+        this.refreshList();
       });
     }
   }
 
-  private startSearch(): void {
-    // For now, just clear search on ESC - a full search input would need a modal
-    this.searchQuery = "";
-    this.refreshList();
-  }
-
   private async requestExternalEdit(note?: Note): Promise<void> {
-    // Use ctx.ui.editor() via a callback - we need to bridge to the extension context
-    if (this.tuiRef && (this.tuiRef as any)._piEditorCallback) {
-      await (this.tuiRef as any)._piEditorCallback(note);
-    }
-  }
-
-  // Called by extension after external editor returns
-  async onEditorResult(title: string, content: string): Promise<void> {
-    if (this.editingNote) {
-      await getNoteStore().update(this.editingNote.id, { title, content });
-    } else {
-      await getNoteStore().create(title, content);
-    }
+    const updated = await this.onExternalEdit(note);
     this.editingNote = null;
-    this.refreshNotes();
+    if (updated) {
+      this.notes = updated;
+      this.refreshList();
+    }
     this.exitMode();
   }
+}
 
-  private async refreshNotes(): Promise<void> {
-    this.notes = await getNoteStore().getAll();
-    this.refreshList();
-  }
-
-  // Public method to update notes from outside (e.g., after CLI command)
-  setNotes(notes: Note[]): void {
-    this.notes = notes;
-    this.refreshList();
-  }
+function isPrintableSearchChar(key: string): boolean {
+  if (key.length !== 1) return false;
+  const code = key.charCodeAt(0);
+  return code >= 32 && code !== 127;
 }
 
 // Factory function for ctx.ui.custom()
 export function createNotesTUI(
   notes: Note[],
-  tui: TUI,
   theme: Theme,
   onClose: () => void,
-  onSave: (note: Note) => void,
-  onDelete: (id: string) => void
+  onExternalEdit: (note?: Note) => Promise<Note[] | undefined>,
+  onDelete: (id: string) => Promise<Note[]>,
+  onTogglePin: (note: Note) => Promise<Note[]>
 ): Component & Focusable {
-  return new NotesTUI(notes, tui, theme, onClose, onSave, onDelete);
+  return new NotesTUI(notes, theme, onClose, onExternalEdit, onDelete, onTogglePin);
 }

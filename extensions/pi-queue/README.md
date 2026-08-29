@@ -1,10 +1,26 @@
-# @piverse/queue
+# @vs4vijay/pi-queue
 
 Queue messages to run after the current Pi agent turn settles.
 
 ## Install
 
-Add `@vs4vijay/piverse` to your pi config, or reference the extension path directly:
+Install from npm, then add it to your pi config:
+
+```
+pi install npm:@vs4vijay/pi-queue
+```
+
+In your pi config, reference the package as an extension:
+
+```json
+{
+  "pi": {
+    "extensions": ["@vs4vijay/pi-queue"]
+  }
+}
+```
+
+Or, when developing in this repo, reference the extension path directly:
 
 ```json
 {
@@ -25,6 +41,7 @@ All commands are available as both `/queue-*` and `/q-*`.
 | `/queue-clear` | `/q-clear` | Clear all queued messages |
 | `/queue-pause` | `/q-pause` | Pause auto-firing (queue stays intact) |
 | `/queue-resume` | `/q-resume` | Resume auto-firing and fire next immediately |
+| `/queue-flush` | `/q-flush` | Drain all remaining messages, one per turn, ignoring pause / error stop |
 | `/queue-rm <index>` | `/q-rm <index>` | Remove item at position (1-based) |
 | `/queue-next <msg>` | `/q-next <msg>` | Insert message at front (fires next) |
 | `/queue-file <path>` | `/q-file <path>` | Queue lines from a file (skips `#` comments) |
@@ -77,6 +94,16 @@ With nothing queued:
 Queue is empty. /queue <message> to add.
 ```
 
+If the queue is paused and empty:
+
+```
+> /queue-pause
+Queue paused.
+
+> /queue
+Queue is empty and paused. /queue <message> to add.
+```
+
 ## Features
 
 ### Stop on Error
@@ -103,6 +130,20 @@ update the README
 /q-file tasks.txt
 → Queued 3 item(s) from tasks.txt
 ```
+
+### Flush
+
+`/q-flush` drains **all** remaining queued messages back-to-back, one per turn — overriding both a manual pause and the stop-on-error behavior. Useful when you want the whole backlog fired off at once regardless of a mid-batch error.
+
+```
+> /q-flush
+Flush armed — firing all 3 remaining, one per turn.
+→ Queue: running 1/3
+→ Queue: running 2/3
+→ Queue: running 3/3
+```
+
+Running `/q-flush` on an empty queue reports `Queue already empty.`
 
 ## Persistence
 

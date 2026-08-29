@@ -17,7 +17,7 @@ export interface NotesState {
   version: number; // for future migrations
 }
 
-export type Subcommand = "list" | "show" | "rm" | "search" | "tag" | "untag" | "pin" | "unpin" | "template" | "export" | "import" | "";
+export type Subcommand = "list" | "show" | "rm" | "edit" | "search" | "tag" | "untag" | "pin" | "unpin" | "export" | "import" | "";
 
 export interface ParsedCommand {
   subcommand: Subcommand;
@@ -37,12 +37,12 @@ export function parseNotesCommand(input: string): ParsedCommand {
     "list",
     "show",
     "rm",
+    "edit",
     "search",
     "tag",
     "untag",
     "pin",
     "unpin",
-    "template",
     "export",
     "import",
   ];

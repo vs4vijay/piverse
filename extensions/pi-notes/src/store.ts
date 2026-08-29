@@ -4,12 +4,8 @@
 
 import { promises as fs } from "fs";
 import { join, dirname } from "path";
-import { fileURLToPath } from "url";
 import type { Note, NotesState } from "./types.js";
 import { NOTES_DIR, NOTES_FILE } from "./types.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 export class NoteStore {
   private cwd: string;
@@ -134,18 +130,100 @@ export class NoteStore {
       (n) => n.title.toLowerCase().includes(lower) || n.content.toLowerCase().includes(lower)
     );
   }
+
+  async exportTo(filePath: string): Promise<number> {
+    const state: NotesState = {
+      notes: await this.getAll(),
+      version: 1,
+    };
+    const dir = dirname(filePath);
+    await fs.mkdir(dir, { recursive: true });
+    const tempPath = filePath + ".tmp";
+    await fs.writeFile(tempPath, JSON.stringify(state, null, 2), "utf-8");
+    await fs.rename(tempPath, filePath);
+    return state.notes.length;
+  }
+
+  async importFrom(filePath: string): Promise<{ imported: number; skipped: number }> {
+    const data = await fs.readFile(filePath, "utf-8");
+    const parsed = JSON.parse(data) as unknown;
+    const incoming = parseNotesState(parsed);
+
+    const current = await this.getAll();
+    const existingIds = new Set(current.map((n) => n.id));
+    const merged = [...current];
+    let imported = 0;
+
+    for (const note of incoming) {
+      if (existingIds.has(note.id)) continue;
+      merged.push(note);
+      existingIds.add(note.id);
+      imported++;
+    }
+
+    merged.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+
+    await this.save(merged);
+    return { imported, skipped: incoming.length - imported };
+  }
 }
 
-// Singleton for extension lifecycle
-let storeInstance: NoteStore | null = null;
+function parseNotesState(value: unknown): Note[] {
+  if (!value || typeof value !== "object" || !Array.isArray((value as { notes?: unknown }).notes)) {
+    throw new Error('Invalid notes file: expected an object like { "notes": [...] }');
+  }
+  const notes = (value as { notes: unknown[] }).notes;
+  return notes.map((n, i) => parseNote(n, i));
+}
+
+function parseNote(value: unknown, index: number): Note {
+  if (!value || typeof value !== "object") {
+    throw new Error(`Invalid note at index ${index}: expected an object`);
+  }
+  const n = value as Record<string, unknown>;
+  if (
+    typeof n.id !== "string" ||
+    typeof n.title !== "string" ||
+    typeof n.createdAt !== "string" ||
+    typeof n.updatedAt !== "string"
+  ) {
+    throw new Error(`Invalid note at index ${index}: missing id, title, createdAt, or updatedAt`);
+  }
+
+  const note: Note = {
+    id: n.id,
+    title: n.title,
+    content: typeof n.content === "string" ? n.content : "",
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+  };
+
+  if (Array.isArray(n.tags)) {
+    const tags = n.tags.filter((t): t is string => typeof t === "string");
+    if (tags.length > 0) note.tags = tags;
+  }
+  if (typeof n.pinned === "boolean") note.pinned = n.pinned;
+
+  return note;
+}
+
+// Per-cwd cache so multi-project sessions don't share a single store instance
+const stores = new Map<string, NoteStore>();
 
 export function getNoteStore(cwd?: string): NoteStore {
-  if (!storeInstance) {
-    storeInstance = new NoteStore(cwd);
+  const key = cwd ?? process.cwd();
+  let store = stores.get(key);
+  if (!store) {
+    store = new NoteStore(key);
+    stores.set(key, store);
   }
-  return storeInstance;
+  return store;
 }
 
 export function resetNoteStore(): void {
-  storeInstance = null;
+  stores.clear();
 }

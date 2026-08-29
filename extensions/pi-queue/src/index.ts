@@ -1,15 +1,16 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   let queue: string[] = [];
   let paused = false;
   let lastTurnHadError = false;
   let drainTotal = 0;
+  let flushing = false;
 
   // Register command under both /queue-* and /q-* names
-  function cmd(name: string, description: string, handler: (args: string, ctx: any) => Promise<void>) {
+  function cmd(name: string, description: string, handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>) {
     const opts = { description, handler };
     pi.registerCommand(`queue${name}`, opts);
     pi.registerCommand(`q${name}`, opts);
@@ -18,7 +19,12 @@ export default function (pi: ExtensionAPI) {
   cmd("", "Queue a message to send after the current turn settles. No args = show queue.", async (args, ctx) => {
     if (!args.trim()) {
       if (queue.length === 0) {
-        ctx.ui.notify("Queue is empty. /queue <message> to add.", "info");
+        ctx.ui.notify(
+          paused
+            ? "Queue is empty and paused. /queue <message> to add."
+            : "Queue is empty. /queue <message> to add.",
+          "info"
+        );
       } else {
         const label = paused ? `Queued (${queue.length}, PAUSED)` : `Queued (${queue.length})`;
         const display = queue.map((m, i) => `${i + 1}. ${m}`).join("\n");
@@ -51,6 +57,16 @@ export default function (pi: ExtensionAPI) {
     } else {
       ctx.ui.notify("Queue resumed (empty).", "info");
     }
+  });
+
+  cmd("-flush", "Drain all remaining queued messages, one per turn, ignoring pause/error stop", async (_args, ctx) => {
+    if (queue.length === 0) {
+      ctx.ui.notify("Queue already empty.", "info");
+      return;
+    }
+    flushing = true;
+    paused = false;
+    ctx.ui.notify(`Flush armed — firing all ${queue.length} remaining, one per turn.`, "info");
   });
 
   cmd("-rm", "Remove a queued item by index (1-based)", async (args, ctx) => {
@@ -99,22 +115,25 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_settled", async (_event, ctx) => {
     if (queue.length === 0) {
       drainTotal = 0;
+      flushing = false;
       return;
     }
-    if (lastTurnHadError) {
-      paused = true;
-      lastTurnHadError = false;
-      ctx.ui.notify("Queue paused — previous turn had errors. /queue-resume to continue.", "warning");
-      return;
+    if (!flushing) {
+      if (lastTurnHadError) {
+        paused = true;
+        lastTurnHadError = false;
+        ctx.ui.notify("Queue paused — previous turn had errors. /queue-resume to continue.", "warning");
+        return;
+      }
+      if (paused) return;
     }
-    if (paused) return;
+    lastTurnHadError = false;
 
     // Track progress
     if (drainTotal === 0) drainTotal = queue.length;
     const current = drainTotal - queue.length + 1;
     ctx.ui.notify(`Queue: running ${current}/${drainTotal}`, "info");
 
-    lastTurnHadError = false;
     const next = queue.shift()!;
     const opts = next.startsWith("/") ? { expandPromptTemplates: true } : {};
     pi.sendUserMessage(next, opts);
@@ -123,6 +142,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     queue = [];
     paused = false;
+    flushing = false;
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type === "custom" && entry.customType === "piverse-queue-state") {
         const data = entry.data as { queue: string[]; paused?: boolean };
