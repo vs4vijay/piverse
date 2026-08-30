@@ -1,6 +1,6 @@
 {
   "name": "@vs4vijay/pi-notes",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "Project-level notes for the Pi coding agent — /notes command with CLI and TUI",
   "type": "module",
   "keywords": ["pi-package"],

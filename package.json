@@ -1,6 +1,6 @@
 {
   "name": "@vs4vijay/piverse",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "A multi-extension ecosystem for the Pi coding agent — message queueing (/queue) and project notes (/notes) extensions",
   "keywords": [
     "pi-package"
